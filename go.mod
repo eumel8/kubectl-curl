@@ -1,4 +1,4 @@
-module curl.go
+module github.com/eumel8/kubectl-curl
 
 go 1.21.0
 
