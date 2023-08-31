@@ -27,12 +27,11 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
-
-	"github.com/segmentio/kubectl-curl/curl"
+	//"github.com/segmentio/kubectl-curl/curl"
 )
 
 var (
-	curlOptions = curl.NewOptionSet()
+	//curlOptions = curl.NewOptionSet()
 
 	help    bool
 	debug   bool
@@ -54,31 +53,6 @@ func init() {
 	flags.BoolVarP(&debug, "debug", "", false,
 		"Enable debug mode to print more details about the kubectl command execution.")
 	cflags = pflag.NewFlagSet("curl", pflag.ExitOnError) // curl-only FlagSet
-	for _, opt := range curlOptions {
-		name := strings.TrimPrefix(opt.Name, "--")
-		short := strings.TrimPrefix(opt.Short, "-")
-
-		// Rewrite option names that conflict with the kubectl default options:
-		switch name {
-		case "user": // * Change curl's "--user" option to "--userinfo"
-			name = "userinfo"
-		}
-
-		switch short {
-		case "n", "s":
-			// Remove short names that conflict with the kubectl default options:
-			// * "-n" conflicts between kubectl's "--namespace" and curl's "--netrc"
-			// * "-s" conflicts between kubectl's "--server" and curl's "--silent"
-			short = ""
-		}
-
-		flag := flags.VarPF(opt.Value, name, short, opt.Help)
-		cflag := cflags.VarPF(opt.Value, name, short, opt.Help)
-		if curl.IsBoolFlag(opt.Value) {
-			flag.NoOptDefVal = "true"
-			cflag.NoOptDefVal = "true"
-		}
-	}
 
 	config = genericclioptions.NewConfigFlags(false)
 	config.AddFlags(flags) // adds k8s config flags to flags
@@ -173,7 +147,6 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	log.Printf("kubectl get -n %s pod/%s", namespace, podName)
 	pod, err := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return err
@@ -206,7 +179,6 @@ func run(ctx context.Context) error {
 		remotePort = selectedContainerPort.ContainerPort
 	}
 
-	log.Printf("forwarding local port %d to port %d of %s", localPort, remotePort, containerName)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -224,10 +196,10 @@ func run(ctx context.Context) error {
 
 	wg := sync.WaitGroup{}
 	defer wg.Wait()
-	defer log.Printf("waiting for port forwarder to stop")
+	//defer fmt.Printf("waiting for port forwarder to stop")
 
 	defer cancel()
-	defer log.Printf("shutting down port forwarder")
+	//defer fmt.Printf("shutting down port forwarder")
 
 	wg.Add(1)
 	go func() {
@@ -235,17 +207,17 @@ func run(ctx context.Context) error {
 		defer f.Close()
 
 		if err := f.ForwardPorts(); err != nil {
-			log.Print(err)
+			fmt.Print(err)
 		}
 	}()
 
-	log.Printf("waiting for port fowarding to be established")
 	select {
 	case <-f.Ready:
 	case <-ctx.Done():
 		return nil
 	}
 
+	//fmt.Println(requestURL)
 	requestURL.Host = net.JoinHostPort("localhost", strconv.Itoa(int(localPort)))
 	cArgs = append(cArgs, requestURL.String())
 	// The -s option is taken by -s,--server from the default kubectl
@@ -258,23 +230,7 @@ func run(ctx context.Context) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	log.Printf("curl %s", prettyArgs(cmd.Args[1:]))
 	return cmd.Run()
-}
-
-func prettyArgs(slice []string) string {
-	out := ""
-	for i, s := range slice {
-		if strings.Contains(s, " ") {
-			out += fmt.Sprintf("%q", s) // add quotes when known
-		} else {
-			out += s
-		}
-		if i != len(slice)-1 {
-			out += " " // separate elements with space
-		}
-	}
-	return out
 }
 
 func selectContainerPort(pod *corev1.Pod, containerName, portName string) (selectedContainerName string, selectedContainerPort corev1.ContainerPort, err error) {
@@ -316,8 +272,10 @@ func openPortForwarder(ctx context.Context, fwd portForwarderConfig) (*portforwa
 		return nil, err
 	}
 
-	host := strings.TrimLeft(fwd.config.Host, "htps:/")
-	path := fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", fwd.pod.Namespace, fwd.pod.Name)
+	host := strings.TrimLeft(fwd.config.Host, "https://")
+	// host can be a FQDN or URL. If so, then split the FQDN and add the URI to the path
+	hostSplit := strings.SplitN(host, "/", 2)
+	path := fmt.Sprintf("%sapi/v1/namespaces/%s/pods/%s/portforward", hostSplit[1], fwd.pod.Namespace, fwd.pod.Name)
 
 	client := &http.Client{
 		Transport: transport,
@@ -325,7 +283,7 @@ func openPortForwarder(ctx context.Context, fwd portForwarderConfig) (*portforwa
 
 	dialer := spdy.NewDialer(upgrader, client, http.MethodPost, &url.URL{
 		Scheme: "https",
-		Host:   host,
+		Host:   hostSplit[0],
 		Path:   path,
 	})
 
