@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"io"
 	"log"
 	"math/rand"
@@ -15,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +35,8 @@ var (
 
 	help    bool
 	debug   bool
+	verbose bool
+	header  string
 	options string
 	flags   *pflag.FlagSet
 	cflags  *pflag.FlagSet
@@ -43,7 +45,7 @@ var (
 
 func init() {
 	runtime.ErrorHandlers = nil // disables default kubernetes error logging
-	rand.Seed(time.Now().UnixNano())
+	//rand.Seed(time.Now().UnixNano())
 
 	log.SetOutput(os.Stderr)
 	log.SetPrefix("* ")
@@ -52,10 +54,17 @@ func init() {
 	flags.BoolVarP(&help, "help", "h", false, "Prints the kubectl plugin help.")
 	flags.BoolVarP(&debug, "debug", "", false,
 		"Enable debug mode to print more details about the kubectl command execution.")
+	flags.BoolVarP(&verbose, "verbose", "v", false, "Make curl more talkative")
+	flags.StringVarP(&header, "header", "H", "", "Pass custom header(s) to server")
+
 	cflags = pflag.NewFlagSet("curl", pflag.ExitOnError) // curl-only FlagSet
+
+	cflags.BoolVarP(&verbose, "verbose", "v", false, "Make curl more talkative")
+	cflags.StringVarP(&header, "header", "H", "", "Pass custom header(s) to server")
 
 	config = genericclioptions.NewConfigFlags(false)
 	config.AddFlags(flags) // adds k8s config flags to flags
+
 	options = flags.FlagUsages()
 }
 
@@ -118,7 +127,7 @@ func run(ctx context.Context) error {
 		return usageError("too many arguments passed in the command line invocation of kubectl curl")
 	}
 
-	if strings.Index(query, "://") < 0 {
+	if !strings.Contains(query, "://") {
 		query = "http://" + query
 	}
 
@@ -171,11 +180,11 @@ func run(ctx context.Context) error {
 	}
 
 	if remotePort == 0 {
-		selectedContainerName, selectedContainerPort, err := selectContainerPort(pod, containerName, portName)
+		_, selectedContainerPort, err := selectContainerPort(pod, containerName, portName)
 		if err != nil {
 			return err
 		}
-		containerName = selectedContainerName
+		//containerName = selectedContainerName
 		remotePort = selectedContainerPort.ContainerPort
 	}
 
@@ -196,10 +205,7 @@ func run(ctx context.Context) error {
 
 	wg := sync.WaitGroup{}
 	defer wg.Wait()
-	//defer fmt.Printf("waiting for port forwarder to stop")
-
 	defer cancel()
-	//defer fmt.Printf("shutting down port forwarder")
 
 	wg.Add(1)
 	go func() {
