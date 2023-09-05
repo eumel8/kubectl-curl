@@ -31,8 +31,6 @@ import (
 )
 
 var (
-	//curlOptions = curl.NewOptionSet()
-
 	help    bool
 	debug   bool
 	verbose bool
@@ -45,7 +43,6 @@ var (
 
 func init() {
 	runtime.ErrorHandlers = nil // disables default kubernetes error logging
-	//rand.Seed(time.Now().UnixNano())
 
 	log.SetOutput(os.Stderr)
 	log.SetPrefix("* ")
@@ -281,7 +278,7 @@ func openPortForwarder(ctx context.Context, fwd portForwarderConfig) (*portforwa
 	host := strings.TrimLeft(fwd.config.Host, "https://")
 	// host can be a FQDN or URL. If so, then split the FQDN and add the URI to the path
 	hostSplit := strings.SplitN(host, "/", 2)
-	path := fmt.Sprintf("%sapi/v1/namespaces/%s/pods/%s/portforward", hostSplit[1], fwd.pod.Namespace, fwd.pod.Name)
+	path := fmt.Sprintf("%s/api/v1/namespaces/%s/pods/%s/portforward", hostSplit[1], fwd.pod.Namespace, fwd.pod.Name)
 
 	client := &http.Client{
 		Transport: transport,
